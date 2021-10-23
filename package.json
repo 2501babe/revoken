@@ -1,6 +1,8 @@
 {
   "name": "revoken",
   "version": "0.1.0",
+  "author": "hanako mumei",
+  "license": "MIT",
   "private": true,
   "scripts": {
     "serve": "vue-cli-service serve",
@@ -8,6 +10,9 @@
     "lint": "vue-cli-service lint"
   },
   "dependencies": {
+    "@solana/spl-token": "^0.1.8",
+    "@solana/spl-token-registry": "^0.2.285",
+    "@solana/web3.js": "^1.30.0",
     "core-js": "^3.6.5",
     "vue": "^3.0.0"
   },
@@ -32,7 +37,9 @@
     "parserOptions": {
       "parser": "babel-eslint"
     },
-    "rules": {}
+    "rules": {
+      "no-unused-vars": "off"
+    }
   },
   "browserslist": [
     "> 1%",
