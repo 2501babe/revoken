@@ -20,7 +20,7 @@
 
         <div>
             <span v-show="walletConnected">
-                {{ prettyKey }} | {{ solBalance == null ? "--" : solBalance }} sol
+                {{ walletConnected ? pretty(wallet.publicKey) : "" }} | {{ solBalance == null ? "--" : solBalance }} sol
             </span>
             <br/>
         </div>
@@ -36,7 +36,13 @@
             you independently grant it a maximum budget it can use without further authorization
         </p>
 
-        <div class="center"><img src="/hana-tweet.png"/></div>
+        <div class="center">
+            <img src="/hana-tweet.png"
+                 alt="tiny brain: malicious solana program that rugs people who call it.
+                      giant dick: malicious solana program that tags people who call it
+                      with approvals and then rugs everyone all at once months later
+            "/>
+        </div>
 
         <p>
             but thanks to how cross program calling works in solana this can actually be used against you.
@@ -72,10 +78,30 @@
         <p>something happened</p>
     </div>
     <div v-else-if="tokens.length == 0">
-        <p>you have no open approvals. congrats! youre safe. isnt that what youve always wanted to hear?</p>
+        <p>congrats! youre safe. isnt that what youve always wanted to hear?</p>
     </div>
     <div v-else>
-        <p>youre fucked</p>
+        <!-- ok what actually do i want in table.....
+             button, address, mint, amount, delegate
+        -->
+        <table class="token-table">
+            <tr>
+                <th/>
+                <th>token</th>
+                <th>account address</th>
+                <th>mint address</th>
+                <th>delegate address</th>
+                <th>approved amount</th>
+            </tr>
+            <tr v-for="token in tokens" :key="token.address">
+                <td><button @click="revoke(token.address)">revoke</button></td>
+                <td>(unknown token)</td>
+                <td>{{ pretty(token.address) }}</td>
+                <td>{{ pretty(token.mint) }}</td>
+                <td>{{ pretty(token.delegate || "") }}</td>
+                <td>{{ token.delegatedAmount }}</td>
+            </tr>
+        </table>
     </div>
 
     <p class="center"><a href="/index.html">home</a></p>
@@ -83,7 +109,7 @@
 
 <script>
     import * as w3 from "../node_modules/@solana/web3.js";
-    import { TOKEN_PROGRAM_ID, AccountLayout, u64 } from "../node_modules/@solana/spl-token";
+    import { TOKEN_PROGRAM_ID, Token, AccountLayout, u64 } from "../node_modules/@solana/spl-token";
 
     const NETWORKS = {
         "mainnet-beta": "https://solana-api.projectserum.com",
@@ -129,12 +155,6 @@
             }
         },
         computed: {
-            prettyKey() {
-                if(!this.walletConnected) return "";
-
-                let pubkey = this.wallet.publicKey.toString();
-                return pubkey.substring(0, 4) + "..." + pubkey.substring(pubkey.length - 4);
-            },
             phantom() {
                 return !!(this.wallet && this.wallet.isPhantom);
             }
@@ -150,12 +170,17 @@
             connectChain() {
                 this.connection = new w3.Connection(NETWORKS[this.selectedNetwork]);
             },
+            // TODO this should let you mouse over to see the full address and click to copy
+            pretty(key) {
+                let pubkey = key.toString();
+                return pubkey.substring(0, 4) + "..." + pubkey.substring(pubkey.length - 4);
+            },
             parseTokenAccount(address, account) {
                 let accountInfo = AccountLayout.decode(account.data);
 
                 // no need to waste cycles
                 // XXX remember to remove if i use this function elsewhere
-                if(accountInfo.delegateOption === 0) return null;
+                //if(accountInfo.delegateOption === 0) return null;
 
                 accountInfo.address = address;
                 accountInfo.mint = new w3.PublicKey(accountInfo.mint);
@@ -196,14 +221,6 @@
                     .catch(() => null);
             },
             async fetchTokens() {
-                // XXX ok tomorrow this works
-                // filter to only with delegate
-                // i can use command line to approve so this is easy to test
-                // so then... render the filtered results with v-for
-                // tick boxes, token info if it exists in the registry
-                // button on the bottom of the form and then build our transactions
-                // orrr nah actually. just put revoke buttons next to every token
-                // that way i dont have to worry about batching logic
                 let vm = this;
 
                 // get all tokens for this wallet, parse them, and filter those without delegates
@@ -213,6 +230,27 @@
                     { programId: TOKEN_PROGRAM_ID }
                 ).then(res => res.value.map(v => vm.parseTokenAccount(v.pubkey, v.account)).filter(t => t))
                 .catch(() => undefined);
+
+                // TODO fetch mints here for decimal? unless they can be got from token registry
+            },
+            async revoke(tokenAccount) {
+                let txn = new w3.Transaction();
+                txn.add(
+                    Token.createRevokeInstruction(
+                        TOKEN_PROGRAM_ID,
+                        tokenAccount,
+                        this.wallet.publicKey,
+                        []
+                    )
+                );
+                txn.feePayer = this.wallet.publicKey;
+                txn.recentBlockhash = (await this.connection.getRecentBlockhash()).blockhash
+
+                let signed = await window.solana.signTransaction(txn);
+                await this.connection.sendRawTransaction(signed.serialize());
+
+                // TODO confirm the transaction and update the table
+                // maybe display it still but as like crossed out
             }
         }
     }
@@ -238,6 +276,14 @@ h1, h2, h3 {
 
 .right {
     text-align: right;
+}
+
+.token-table {
+    font: 14px/1.2 sans-serif;
+}
+
+td, th {
+    padding: 0 10px;
 }
 
 code {
