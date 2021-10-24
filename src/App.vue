@@ -28,7 +28,7 @@
 
     <h1>solana token revoken</h1>
 
-    <div v-if="tokens == null">
+    <div v-if="tokens === null">
         <p>
             the spl token program has an instruction called approve.
             approve is intended to function similar the ierc20 function of the same name:
@@ -68,10 +68,14 @@
             <button :disabled="!walletConnected" @click="fetchTokens()">lets do it</button>
         </div>
     </div>
+    <div v-else-if="tokens === undefined">
+        <p>something happened</p>
+    </div>
     <div v-else-if="tokens.length == 0">
         <p>you have no open approvals. congrats! youre safe. isnt that what youve always wanted to hear?</p>
     </div>
     <div v-else>
+        <p>youre fucked</p>
     </div>
 
     <p class="center"><a href="/index.html">home</a></p>
@@ -120,7 +124,7 @@
                 wallet: null,
                 walletConnected: false,
                 solBalance: null,
-                selectedNetwork: "testnet",
+                selectedNetwork: "fortuna",
                 tokens: null,
             }
         },
@@ -149,14 +153,16 @@
             parseTokenAccount(address, account) {
                 let accountInfo = AccountLayout.decode(account.data);
 
+                // no need to waste cycles
+                // XXX remember to remove if i use this function elsewhere
+                if(accountInfo.delegateOption === 0) return null;
+
                 accountInfo.address = address;
                 accountInfo.mint = new w3.PublicKey(accountInfo.mint);
                 accountInfo.owner = new w3.PublicKey(accountInfo.owner);
                 accountInfo.amount = u64.fromBuffer(accountInfo.amount);
 
-                console.log("HANA ai:", accountInfo);
-
-                if (accountInfo.delegateOption === 0) {
+                if(accountInfo.delegateOption === 0) {
                     accountInfo.delegate = null;
                     accountInfo.delegatedAmount = new u64();
                 } else {
@@ -167,7 +173,7 @@
                 accountInfo.isInitialized = accountInfo.state !== 0;
                 accountInfo.isFrozen = accountInfo.state === 2;
 
-                if (accountInfo.isNativeOption === 1) {
+                if(accountInfo.isNativeOption === 1) {
                     accountInfo.rentExemptReserve = u64.fromBuffer(accountInfo.isNative);
                     accountInfo.isNative = true;
                 } else {
@@ -175,7 +181,7 @@
                     accountInfo.isNative = false;
                 }
 
-                if (accountInfo.closeAuthorityOption === 0) {
+                if(accountInfo.closeAuthorityOption === 0) {
                     accountInfo.closeAuthority = null;
                 } else {
                     accountInfo.closeAuthority = new w3.PublicKey(accountInfo.closeAuthority);
@@ -198,12 +204,15 @@
                 // button on the bottom of the form and then build our transactions
                 // orrr nah actually. just put revoke buttons next to every token
                 // that way i dont have to worry about batching logic
-                let x = await this.connection.getTokenAccountsByOwner(this.wallet.publicKey, { programId: TOKEN_PROGRAM_ID });
-                let tok = x.value[0];
-                console.log("HANA tok:", tok);
-                let acct = this.parseTokenAccount(tok.pubkey, tok.account);
-                console.log("HANA acct:", acct);
-                this.tokens = [];
+                let vm = this;
+
+                // get all tokens for this wallet, parse them, and filter those without delegates
+                // i short circuit in the parser when this is the case
+                this.tokens = await vm.connection.getTokenAccountsByOwner(
+                    vm.wallet.publicKey,
+                    { programId: TOKEN_PROGRAM_ID }
+                ).then(res => res.value.map(v => vm.parseTokenAccount(v.pubkey, v.account)).filter(t => t))
+                .catch(() => undefined);
             }
         }
     }
