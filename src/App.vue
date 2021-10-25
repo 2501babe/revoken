@@ -1,260 +1,278 @@
 <template>
-    <div class="right">
-        <select :disabled="walletConnected" v-model="selectedNetwork">
-            <option>mainnet-beta</option>
-            <option>testnet</option>
-            <option>devnet</option>
-            <option>localhost</option>
-            <option>fortuna</option>
-        </select>
+<div class="right">
+    <select :disabled="walletConnected" v-model="selectedNetwork">
+        <option>mainnet-beta</option>
+        <option>testnet</option>
+        <option>devnet</option>
+        <option>localhost</option>
+        <option>fortuna</option>
+    </select>
 
-        <span v-if="walletConnected">
-            <button @click="wallet.disconnect()">disconnect</button>
+    <span v-if="walletConnected">
+        <button @click="wallet.disconnect()">disconnect</button>
+    </span>
+    <span v-else-if="wallet && !phantom">
+        <button :disabled="true">phantom only sorry</button>
+    </span>
+    <span v-else>
+        <button :disabled="!wallet" @click="wallet.connect()">connect</button>
+    </span>
+
+    <div>
+        <span v-show="walletConnected">
+            {{ walletConnected ? pretty(wallet.publicKey) : "" }} | {{ solBalance == null ? "--" : solBalance }} sol
         </span>
-        <span v-else-if="wallet && !phantom">
-            <button :disabled="true">phantom only sorry</button>
-        </span>
-        <span v-else>
-            <button :disabled="!wallet" @click="wallet.connect()">connect</button>
-        </span>
+        <br/>
+    </div>
+</div>
 
-        <div>
-            <span v-show="walletConnected">
-                {{ walletConnected ? pretty(wallet.publicKey) : "" }} | {{ solBalance == null ? "--" : solBalance }} sol
-            </span>
-            <br/>
-        </div>
+<h1>solana token revoken</h1>
+
+<div v-if="tokens === null">
+    <p>
+        the spl token program has an instruction called approve.
+        approve is intended to function similar the ierc20 function of the same name:
+        instead of signing a token account away to a program to modify as it pleases,
+        you independently grant it a maximum budget it can use without further authorization
+    </p>
+
+    <div class="center">
+        <img src="/hana-tweet.png"
+             alt="tiny brain: malicious solana program that rugs people who call it.
+                  giant dick: malicious solana program that tags people who call it
+                  with approvals and then rugs everyone all at once months later
+        "/>
     </div>
 
-    <h1>solana token revoken</h1>
+    <p>
+        but thanks to how cross program calling works in solana this can actually be used against you.
+        if you sign for a token account to a malicious program, it can call into the token program and
+        use your signature to approve itself to withdraw an unlimited amount of that token at an arbitrary later date
+    </p>
 
-    <div v-if="tokens === null">
-        <p>
-            the spl token program has an instruction called approve.
-            approve is intended to function similar the ierc20 function of the same name:
-            instead of signing a token account away to a program to modify as it pleases,
-            you independently grant it a maximum budget it can use without further authorization
-        </p>
+    <p>
+        to be clear it could also just steal your tokens then and there.
+        but a program may want to use approvals to a) fly under the radar for some time to massively increase its take,
+        and b) fool phantoms new balance change simulator by not actually changing balances in the transaction you sign.
+        this would be a really cool attack and would scare a lot of people i think
+    </p>
 
-        <div class="center">
-            <img src="/hana-tweet.png"
-                 alt="tiny brain: malicious solana program that rugs people who call it.
-                      giant dick: malicious solana program that tags people who call it
-                      with approvals and then rugs everyone all at once months later
-            "/>
-        </div>
+    <p>
+        this is all because of another interesting ("interesting") difference between solana and ethereum.
+        on ethereum, erc20 transfer always uses msg.sender as the token sender.
+        it is not possible for a contract to avoid the two legged approve and  transferFrom flow.
+        but on solana, theres only transfer, gated by either a wallet signature or an approval.
+        cross program calls pass the hash so to speak, and programs cannot distinguish an intermediary from an origin
+    </p>
 
-        <p>
-            but thanks to how cross program calling works in solana this can actually be used against you.
-            if you sign for a token account to a malicious program, it can call into the token program and
-            use your signature to approve itself to withdraw an unlimited amount of that token at an arbitrary later date
-        </p>
+    <p>
+        anyway!! this is a client app that pulls your token accounts, checks for active approvals, 
+        and creates and sends transactions to revoke them at your pleasure
+    </p>
 
-        <p>
-            to be clear it could also just steal your tokens then and there.
-            but a program may want to use approvals to a) fly under the radar for some time to massively increase its take,
-            and b) fool phantoms new balance change simulator by not actually changing balances in the transaction you sign.
-            this would be a really cool attack and would scare a lot of people i think
-        </p>
-
-        <p>
-            this is all because of another interesting ("interesting") difference between solana and ethereum.
-            on ethereum, erc20 transfer always uses msg.sender as the token sender.
-            it is not possible for a contract to avoid the two legged approve and  transferFrom flow.
-            but on solana, theres only transfer, gated by either a wallet signature or an approval.
-            cross program calls pass the hash so to speak, and programs cannot distinguish an intermediary from an origin
-        </p>
-
-        <p>
-            anyway!! this is a client app that pulls your token accounts, checks for active approvals, 
-            and creates and sends transactions to revoke them at your pleasure
-        </p>
-
-        <div class="center">
-            <button :disabled="!walletConnected" @click="fetchTokens()">lets do it</button>
-        </div>
+    <div class="center">
+        <button :disabled="!walletConnected" @click="fetchTokens()">lets do it</button>
     </div>
-    <div v-else-if="tokens === undefined">
-        <p>something happened</p>
-    </div>
-    <div v-else-if="tokens.length == 0">
-        <p>congrats! youre safe. isnt that what youve always wanted to hear?</p>
-    </div>
-    <div v-else>
-        <!-- ok what actually do i want in table.....
-             button, address, mint, amount, delegate
-        -->
-        <table class="token-table">
-            <tr>
-                <th/>
-                <th>token</th>
-                <th>account address</th>
-                <th>mint address</th>
-                <th>delegate address</th>
-                <th>approved amount</th>
-            </tr>
-            <tr v-for="token in tokens" :key="token.address">
-                <td><button @click="revoke(token.address)">revoke</button></td>
-                <td>(unknown token)</td>
-                <td>{{ pretty(token.address) }}</td>
-                <td>{{ pretty(token.mint) }}</td>
-                <td>{{ pretty(token.delegate || "") }}</td>
-                <td>{{ token.delegatedAmount }}</td>
-            </tr>
-        </table>
-    </div>
+</div>
+<div v-else-if="tokens === undefined">
+    <p>something happened</p>
+</div>
+<div v-else-if="tokens.length == 0">
+    <p>congrats! youre safe. isnt that what youve always wanted to hear?</p>
+</div>
+<div v-else>
+    <!-- ok what actually do i want in table.....
+         button, address, mint, amount, delegate
+    -->
+    <table class="token-table">
+        <tr>
+            <th/>
+            <th>token</th>
+            <th>account address</th>
+            <th>mint address</th>
+            <th>delegate address</th>
+            <th>approved amount</th>
+        </tr>
+        <tr v-for="token in tokens" :key="token.address.toString()">
+            <td class="button-swap">
+                <span v-if="token.revokeStatus == 'open'">
+                    <button @click="revoke(token)">revoke</button>
+                </span>
+                <span v-else-if="token.revokeStatus == 'pending'">
+                    <Dots/>
+                </span>
+                <span v-else-if="token.revokeStatus == 'closed'">
+                    <strong>&check;</strong>
+                </span>
+            </td>
+            <td>(unknown token)</td>
+            <td>{{ pretty(token.address) }}</td>
+            <td>{{ pretty(token.mint) }}</td>
+            <td>{{ token.delegate ? pretty(token.delegate) : "--" }}</td>
+            <td>{{ token.delegatedAmount }}</td>
+        </tr>
+    </table>
+</div>
 
-    <p class="center"><a href="/index.html">home</a></p>
+<p class="center"><a href="/index.html">home</a></p>
 </template>
 
 <script>
-    import * as w3 from "../node_modules/@solana/web3.js";
-    import { TOKEN_PROGRAM_ID, Token, AccountLayout, u64 } from "../node_modules/@solana/spl-token";
+import * as w3 from "../node_modules/@solana/web3.js";
+import { TOKEN_PROGRAM_ID, Token, AccountLayout, u64 } from "../node_modules/@solana/spl-token";
+import Dots from "./components/Dots.vue";
 
-    const NETWORKS = {
-        "mainnet-beta": "https://solana-api.projectserum.com",
-        testnet: "https://api.testnet.solana.com",
-        devnet: "https://api.devnet.solana.com",
-        localhost: "http://127.0.0.1:8899",
-        fortuna: "http://fortuna:8899",
-    };
+const NETWORKS = {
+    "mainnet-beta": "https://solana-api.projectserum.com",
+    testnet: "https://api.testnet.solana.com",
+    devnet: "https://api.devnet.solana.com",
+    localhost: "http://127.0.0.1:8899",
+    fortuna: "http://fortuna:8899",
+};
 
-    export default {
-        name: "App",
-        mounted() {
-            let vm = window.revoken = this;
+export default {
+    name: "App",
+    components: {
+        Dots
+    },
+    mounted() {
+        let vm = window.revoken = this;
 
-            let walletLoop = setInterval(() => {
-                if(window.solana) {
-                    vm.wallet = window.solana;
+        let walletLoop = setInterval(() => {
+            if(window.solana) {
+                vm.wallet = window.solana;
 
-                    window.solana.on("connect", () => {
-                        vm.walletConnected = true;
-                        vm.fetchBalance();
-                    });
+                window.solana.on("connect", () => {
+                    vm.walletConnected = true;
+                    vm.fetchBalance();
+                });
 
-                    window.solana.on("disconnect", () => {
-                        vm.walletConnected = false;
-                        vm.solBalance = null;
-                    });
+                window.solana.on("disconnect", () => {
+                    vm.walletConnected = false;
+                    vm.solBalance = null;
+                    vm.tokens = null;
+                });
 
-                    clearInterval(walletLoop);
-                }
-            }, 100);
-
-            vm.connectChain();
-        },
-        data() {
-            return {
-                connection: null,
-                wallet: null,
-                walletConnected: false,
-                solBalance: null,
-                selectedNetwork: "fortuna",
-                tokens: null,
+                clearInterval(walletLoop);
             }
-        },
-        computed: {
-            phantom() {
-                return !!(this.wallet && this.wallet.isPhantom);
-            }
-        },
-        watch: {
-            selectedNetwork(curr, prev) {
-                if(curr != prev) {
-                    this.connectChain();
-                }
-            }
-        },
-        methods: {
-            connectChain() {
-                this.connection = new w3.Connection(NETWORKS[this.selectedNetwork]);
-            },
-            // TODO this should let you mouse over to see the full address and click to copy
-            pretty(key) {
-                let pubkey = key.toString();
-                return pubkey.substring(0, 4) + "..." + pubkey.substring(pubkey.length - 4);
-            },
-            parseTokenAccount(address, account) {
-                let accountInfo = AccountLayout.decode(account.data);
+        }, 100);
 
-                // no need to waste cycles
-                // XXX remember to remove if i use this function elsewhere
-                //if(accountInfo.delegateOption === 0) return null;
-
-                accountInfo.address = address;
-                accountInfo.mint = new w3.PublicKey(accountInfo.mint);
-                accountInfo.owner = new w3.PublicKey(accountInfo.owner);
-                accountInfo.amount = u64.fromBuffer(accountInfo.amount);
-
-                if(accountInfo.delegateOption === 0) {
-                    accountInfo.delegate = null;
-                    accountInfo.delegatedAmount = new u64();
-                } else {
-                    accountInfo.delegate = new w3.PublicKey(accountInfo.delegate);
-                    accountInfo.delegatedAmount = u64.fromBuffer(accountInfo.delegatedAmount);
-                }
-
-                accountInfo.isInitialized = accountInfo.state !== 0;
-                accountInfo.isFrozen = accountInfo.state === 2;
-
-                if(accountInfo.isNativeOption === 1) {
-                    accountInfo.rentExemptReserve = u64.fromBuffer(accountInfo.isNative);
-                    accountInfo.isNative = true;
-                } else {
-                    accountInfo.rentExemptReserve = null;
-                    accountInfo.isNative = false;
-                }
-
-                if(accountInfo.closeAuthorityOption === 0) {
-                    accountInfo.closeAuthority = null;
-                } else {
-                    accountInfo.closeAuthority = new w3.PublicKey(accountInfo.closeAuthority);
-                }
-
-                return accountInfo;
-            },
-            async fetchBalance() {
-                this.solBalance = await
-                    this.connection.getBalance(this.wallet.publicKey)
-                    .then(bal => (bal / 10 ** 9).toFixed(3))
-                    .catch(() => null);
-            },
-            async fetchTokens() {
-                let vm = this;
-
-                // get all tokens for this wallet, parse them, and filter those without delegates
-                // i short circuit in the parser when this is the case
-                this.tokens = await vm.connection.getTokenAccountsByOwner(
-                    vm.wallet.publicKey,
-                    { programId: TOKEN_PROGRAM_ID }
-                ).then(res => res.value.map(v => vm.parseTokenAccount(v.pubkey, v.account)).filter(t => t))
-                .catch(() => undefined);
-
-                // TODO fetch mints here for decimal? unless they can be got from token registry
-            },
-            async revoke(tokenAccount) {
-                let txn = new w3.Transaction();
-                txn.add(
-                    Token.createRevokeInstruction(
-                        TOKEN_PROGRAM_ID,
-                        tokenAccount,
-                        this.wallet.publicKey,
-                        []
-                    )
-                );
-                txn.feePayer = this.wallet.publicKey;
-                txn.recentBlockhash = (await this.connection.getRecentBlockhash()).blockhash
-
-                let signed = await window.solana.signTransaction(txn);
-                await this.connection.sendRawTransaction(signed.serialize());
-
-                // TODO confirm the transaction and update the table
-                // maybe display it still but as like crossed out
+        vm.connectChain();
+    },
+    data() {
+        return {
+            connection: null,
+            wallet: null,
+            walletConnected: false,
+            solBalance: null,
+            selectedNetwork: "fortuna",
+            tokens: null,
+        }
+    },
+    computed: {
+        phantom() {
+            return !!(this.wallet && this.wallet.isPhantom);
+        }
+    },
+    watch: {
+        selectedNetwork(curr, prev) {
+            if(curr != prev) {
+                this.connectChain();
             }
         }
-    }
+    },
+    methods: {
+        connectChain() {
+            this.connection = new w3.Connection(NETWORKS[this.selectedNetwork]);
+        },
+        // TODO this should let you mouse over to see the full address and click to copy
+        pretty(key) {
+            let pubkey = key.toString();
+            return pubkey.substring(0, 4) + "..." + pubkey.substring(pubkey.length - 4);
+        },
+        parseTokenAccount(address, account) {
+            let accountInfo = AccountLayout.decode(account.data);
 
+            // no need to waste cycles
+            // XXX remember to remove if i use this function elsewhere
+            if(accountInfo.delegateOption === 0) return null;
+            else accountInfo.revokeStatus = "open";
+
+            accountInfo.address = address;
+            accountInfo.mint = new w3.PublicKey(accountInfo.mint);
+            accountInfo.owner = new w3.PublicKey(accountInfo.owner);
+            accountInfo.amount = u64.fromBuffer(accountInfo.amount);
+
+            if(accountInfo.delegateOption === 0) {
+                accountInfo.delegate = null;
+                accountInfo.delegatedAmount = new u64();
+            } else {
+                accountInfo.delegate = new w3.PublicKey(accountInfo.delegate);
+                accountInfo.delegatedAmount = u64.fromBuffer(accountInfo.delegatedAmount);
+            }
+
+            accountInfo.isInitialized = accountInfo.state !== 0;
+            accountInfo.isFrozen = accountInfo.state === 2;
+
+            if(accountInfo.isNativeOption === 1) {
+                accountInfo.rentExemptReserve = u64.fromBuffer(accountInfo.isNative);
+                accountInfo.isNative = true;
+            } else {
+                accountInfo.rentExemptReserve = null;
+                accountInfo.isNative = false;
+            }
+
+            if(accountInfo.closeAuthorityOption === 0) {
+                accountInfo.closeAuthority = null;
+            } else {
+                accountInfo.closeAuthority = new w3.PublicKey(accountInfo.closeAuthority);
+            }
+
+            return accountInfo;
+        },
+        async fetchBalance() {
+            this.solBalance = await
+                this.connection.getBalance(this.wallet.publicKey)
+                .then(bal => (bal / 10 ** 9).toFixed(3))
+                .catch(() => null);
+        },
+        async fetchTokens() {
+            let vm = this;
+
+            // get all tokens for this wallet, parse them, and filter those without delegates
+            // i short circuit in the parser when this is the case
+            this.tokens = await vm.connection.getTokenAccountsByOwner(
+                vm.wallet.publicKey,
+                { programId: TOKEN_PROGRAM_ID }
+            ).then(res => res.value.map(v => vm.parseTokenAccount(v.pubkey, v.account)).filter(t => t))
+            .catch(() => undefined);
+
+            // TODO fetch mints here for decimal? unless they can be got from token registry
+        },
+        async revoke(token) {
+            let txn = new w3.Transaction();
+            txn.add(
+                Token.createRevokeInstruction(
+                    TOKEN_PROGRAM_ID,
+                    token.address,
+                    this.wallet.publicKey,
+                    []
+                )
+            );
+            txn.feePayer = this.wallet.publicKey;
+            txn.recentBlockhash = (await this.connection.getRecentBlockhash()).blockhash
+
+            let signed = await window.solana.signTransaction(txn);
+            let sig = await this.connection.sendRawTransaction(signed.serialize());
+            token.revokeStatus = "pending";
+
+            await this.connection.confirmTransaction(sig);
+            token.revokeStatus = "closed";
+            token.delegate = null;
+            token.delegatedAmount = 0;
+        }
+    }
+}
 </script>
 
 <style>
@@ -280,6 +298,13 @@ h1, h2, h3 {
 
 .token-table {
     font: 14px/1.2 sans-serif;
+}
+
+.button-swap {
+    text-align: center;
+    display: inline-block;
+    width: 3em;
+    height: 1.2em;
 }
 
 td, th {
