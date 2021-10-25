@@ -20,7 +20,8 @@
 
     <div>
         <span v-show="walletConnected">
-            {{ walletConnected ? pretty(wallet.publicKey) : "" }} | {{ solBalance == null ? "--" : solBalance }} sol
+            <span v-if="walletConnected"><Address :pubkey="wallet.publicKey"/></span>|
+            {{ solBalance == null ? "--" : solBalance }} sol
         </span>
         <br/>
     </div>
@@ -45,7 +46,7 @@
     </div>
 
     <p>
-        but thanks to how cross program calling works in solana this can actually be used against you.
+        but thanks to how crossprogram calling works in solana this can actually be used against you.
         if you sign for a token account to a malicious program, it can call into the token program and
         use your signature to approve itself to withdraw an unlimited amount of that token at an arbitrary later date
     </p>
@@ -60,9 +61,9 @@
     <p>
         this is all because of another interesting ("interesting") difference between solana and ethereum.
         on ethereum, erc20 transfer always uses msg.sender as the token sender.
-        it is not possible for a contract to avoid the two legged approve and  transferFrom flow.
+        it is not possible for a contract to avoid the twolegged approve and  transferFrom flow.
         but on solana, theres only transfer, gated by either a wallet signature or an approval.
-        cross program calls pass the hash so to speak, and programs cannot distinguish an intermediary from an origin
+        crossprogram calls pass the hash so to speak, and programs cannot distinguish an intermediary from an origin
     </p>
 
     <p>
@@ -106,9 +107,14 @@
                 </span>
             </td>
             <td>(unknown token)</td>
-            <td>{{ pretty(token.address) }}</td>
-            <td>{{ pretty(token.mint) }}</td>
-            <td>{{ token.delegate ? pretty(token.delegate) : "--" }}</td>
+            <td><Address :pubkey="token.address"/></td>
+            <td><Address :pubkey="token.mint"/></td>
+            <td>
+                <span v-if="token.delegate">
+                    <Address :pubkey="token.delegate"/>
+                </span>
+                <span v-else>--</span>
+            </td>
             <td>{{ token.delegatedAmount }}</td>
         </tr>
     </table>
@@ -121,6 +127,7 @@
 import * as w3 from "../node_modules/@solana/web3.js";
 import { TOKEN_PROGRAM_ID, Token, AccountLayout, u64 } from "../node_modules/@solana/spl-token";
 import Dots from "./components/Dots.vue";
+import Address from "./components/Address.vue";
 
 const NETWORKS = {
     "mainnet-beta": "https://solana-api.projectserum.com",
@@ -133,7 +140,8 @@ const NETWORKS = {
 export default {
     name: "App",
     components: {
-        Dots
+        Dots,
+        Address,
     },
     mounted() {
         let vm = window.revoken = this;
@@ -184,11 +192,6 @@ export default {
     methods: {
         connectChain() {
             this.connection = new w3.Connection(NETWORKS[this.selectedNetwork]);
-        },
-        // TODO this should let you mouse over to see the full address and click to copy
-        pretty(key) {
-            let pubkey = key.toString();
-            return pubkey.substring(0, 4) + "..." + pubkey.substring(pubkey.length - 4);
         },
         parseTokenAccount(address, account) {
             let accountInfo = AccountLayout.decode(account.data);
@@ -300,10 +303,18 @@ h1, h2, h3 {
     font: 14px/1.2 sans-serif;
 }
 
+button, select {
+    cursor: pointer;
+}
+
+button:disabled, select:disabled {
+    cursor: not-allowed;
+}
+
 .button-swap {
     text-align: center;
     display: inline-block;
-    width: 3em;
+    width: 2.5em;
     height: 1.2em;
 }
 
