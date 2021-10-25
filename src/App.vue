@@ -5,7 +5,6 @@
         <option>testnet</option>
         <option>devnet</option>
         <option>localhost</option>
-        <option>fortuna</option>
     </select>
 
     <span v-if="walletConnected">
@@ -134,7 +133,6 @@ const NETWORKS = {
     testnet: "https://api.testnet.solana.com",
     devnet: "https://api.devnet.solana.com",
     localhost: "http://127.0.0.1:8899",
-    fortuna: "http://fortuna:8899",
 };
 
 export default {
@@ -173,7 +171,7 @@ export default {
             wallet: null,
             walletConnected: false,
             solBalance: null,
-            selectedNetwork: "fortuna",
+            selectedNetwork: "mainnet-beta",
             tokens: null,
         }
     },
