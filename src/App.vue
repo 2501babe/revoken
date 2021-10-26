@@ -10,17 +10,21 @@
     <span v-if="walletConnected">
         <button @click="wallet.disconnect()">disconnect</button>
     </span>
-    <span v-else-if="wallet && !phantom">
-        <button :disabled="true">phantom only sorry</button>
-    </span>
     <span v-else>
-        <button :disabled="!wallet" @click="wallet.connect()">connect</button>
+        <button @click="connectWallet()">connect</button>
     </span>
 
     <div>
-        <span v-show="walletConnected">
-            <span v-if="walletConnected"><Address :pubkey="wallet.publicKey"/></span>|
-            {{ solBalance == null ? "--" : solBalance }} sol
+        <span v-if="walletConnected">
+            <Address :pubkey="wallet.publicKey"/>| {{ solBalance == null ? "--" : solBalance }} sol
+        </span>
+        <span v-else>
+        <!-- XXX need to solve cross-origin issue
+            <input type="radio" id="sollet-rad" value="sollet" v-model="walletChoice"/>
+            <label for="sollet-rad">sollet</label>
+        -->
+            <input type="radio" id="phantom-rad" value="phantom" v-model="walletChoice" :disabled="!phantom"/>
+            <label for="phantom-rad" :class="{'label-disabled': !phantom}">phantom</label>
         </span>
         <br/>
     </div>
@@ -37,7 +41,7 @@
     </p>
 
     <div class="center">
-        <img src="/hana-tweet.png"
+        <img src="https://media.githubusercontent.com/media/2501babe/2501babe.github.io/master/img/hana-revoken-tweet.png"
              alt="tiny brain: malicious solana program that rugs people who call it.
                   giant dick: malicious solana program that tags people who call it
                   with approvals and then rugs everyone all at once months later
@@ -70,6 +74,10 @@
         and creates and sends transactions to revoke them at your pleasure
     </p>
 
+    <p>
+        code available <a href="https://github.com/2501babe/revoken">here</a>
+    </p>
+
     <div class="center">
         <button :disabled="!walletConnected" @click="fetchTokens()">lets do it</button>
     </div>
@@ -81,9 +89,6 @@
     <p>congrats! youre safe. isnt that what youve always wanted to hear?</p>
 </div>
 <div v-else>
-    <!-- ok what actually do i want in table.....
-         button, address, mint, amount, delegate
-    -->
     <table class="token-table">
         <tr>
             <th/>
@@ -125,6 +130,7 @@
 <script>
 import * as w3 from "../node_modules/@solana/web3.js";
 import { TOKEN_PROGRAM_ID, Token, AccountLayout, u64 } from "../node_modules/@solana/spl-token";
+import Wallet from "../node_modules/@project-serum/sol-wallet-adapter";
 import Dots from "./components/Dots.vue";
 import Address from "./components/Address.vue";
 
@@ -144,22 +150,17 @@ export default {
     mounted() {
         let vm = window.revoken = this;
 
-        let walletLoop = setInterval(() => {
+        // phantom loads slower than the page so we have to wait for it
+        // i dunno if other wallets use this name but just in case
+        let loop = setInterval(() => {
             if(window.solana) {
-                vm.wallet = window.solana;
+                if(window.solana.isPhantom) {
+                    vm.phantom = window.solana;
+                } else {
+                    vm.phantom = false;
+                }
 
-                window.solana.on("connect", () => {
-                    vm.walletConnected = true;
-                    vm.fetchBalance();
-                });
-
-                window.solana.on("disconnect", () => {
-                    vm.walletConnected = false;
-                    vm.solBalance = null;
-                    vm.tokens = null;
-                });
-
-                clearInterval(walletLoop);
+                clearInterval(loop);
             }
         }, 100);
 
@@ -170,14 +171,11 @@ export default {
             connection: null,
             wallet: null,
             walletConnected: false,
+            walletChoice: "phantom",
+            phantom: null,
             solBalance: null,
             selectedNetwork: "mainnet-beta",
             tokens: null,
-        }
-    },
-    computed: {
-        phantom() {
-            return !!(this.wallet && this.wallet.isPhantom);
         }
     },
     watch: {
@@ -188,6 +186,38 @@ export default {
         }
     },
     methods: {
+        async connectWallet() {
+            let vm = this;
+
+            switch(vm.walletChoice) {
+                case "sollet":
+                    vm.wallet = await new Wallet("https://www.sollet.io");
+                    break;
+                case "phantom":
+                    // this is safe because we block phantom from being selected until it loads
+                    vm.wallet = vm.phantom;
+                    break;
+                default:
+                    console.error("missed a case", this.walletChoice);
+                    return;
+            }
+
+            vm.wallet.on("connect", () => {
+                vm.walletConnected = true;
+                vm.fetchBalance();
+            });
+
+            vm.wallet.on("disconnect", () => {
+                vm.wallet = null;
+                vm.walletConnected = false;
+                vm.solBalance = null;
+                vm.tokens = null;
+            });
+
+            await vm.wallet.connect();
+
+            console.log(vm.wallet);
+        },
         connectChain() {
             this.connection = new w3.Connection(NETWORKS[this.selectedNetwork]);
         },
@@ -263,7 +293,7 @@ export default {
             txn.feePayer = this.wallet.publicKey;
             txn.recentBlockhash = (await this.connection.getRecentBlockhash()).blockhash
 
-            let signed = await window.solana.signTransaction(txn);
+            let signed = await this.wallet.signTransaction(txn);
             let sig = await this.connection.sendRawTransaction(signed.serialize());
             token.revokeStatus = "pending";
 
@@ -307,6 +337,10 @@ button, select {
 
 button:disabled, select:disabled {
     cursor: not-allowed;
+}
+
+.label-disabled {
+    opacity: 0.5;
 }
 
 .button-swap {
