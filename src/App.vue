@@ -86,6 +86,9 @@
     <p>something happened</p>
 </div>
 <div v-else-if="tokens.length == 0">
+    <div class="center">
+        <img src="https://media.githubusercontent.com/media/2501babe/2501babe.github.io/master/img/makima-chain.jpg"/>
+    </div>
     <p>congrats! youre safe. isnt that what youve always wanted to hear?</p>
 </div>
 <div v-else>
@@ -317,6 +320,11 @@ export default {
 h1, h2, h3 {
     line-height: 1.2;
     text-align: center;
+}
+
+img {
+    max-width: 100%;
+    height: auto;
 }
 
 .center {
