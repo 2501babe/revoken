@@ -129,10 +129,12 @@
 </template>
 
 <script>
-import * as w3 from "../../node_modules/@solana/web3.js";
-import { TOKEN_PROGRAM_ID, Token, AccountLayout, u64 } from "../../node_modules/@solana/spl-token";
-import Wallet from "../../node_modules/@project-serum/sol-wallet-adapter";
-import { useWallet } from "@solana/wallet-adapter-vue";
+import * as w3 from "@solana/web3.js";
+import { TOKEN_PROGRAM_ID, Token, AccountLayout, u64 } from "@solana/spl-token";
+//import Wallet from "../../node_modules/@project-serum/sol-wallet-adapter";
+//import { useWallet } from "@solana/wallet-adapter-vue";
+import { PhantomWalletAdapter } from "@solana/wallet-adapter-phantom";
+import { SolletWalletAdapter } from "@solana/wallet-adapter-sollet";
 import Dots from "./Dots.vue";
 import Address from "./Address.vue";
 
@@ -159,7 +161,8 @@ export default {
         // * attaches the event handlers
         // * connects
 
-        vm.wtf = useWallet();
+        vm.wallet = new SolletWalletAdapter({ provider: "https://www.sollet.io", network: "mainnet-beta" });
+        console.log("HANA wallet:", vm.wallet);
 
         //let { select, adapter } = useWallet();
         //vm.selectWallet = select;
@@ -209,30 +212,27 @@ export default {
         async connectWallet2() {
             let vm = this;
 
-            console.log("HANA before:", vm.wtf.adapter);
-            await vm.wtf.select(vm.walletChoice);
-            console.log("HANA after:", vm.wtf.adapter);
-
-            vm.wtf.adapter.on("connect", () => {
+            vm.wallet.on("connect", () => {
                 console.log("HANA connecting!");
                 vm.walletConnected = true;
                 vm.fetchBalance();
             });
 
-            vm.wtf.adapter.on("disconnect", () => {
+            vm.wallet.on("disconnect", () => {
+                console.log("HANA disconnecting!");
                 vm.walletConnected = false;
                 vm.solBalance = null;
                 vm.tokens = null;
             });
 
-            await vm.wtf.adapter.connect();
+            await vm.wallet.connect();
         },
         async connectWallet() {
             let vm = this;
 
             switch(vm.walletChoice) {
                 case "sollet":
-                    vm.wallet = await new Wallet("https://www.sollet.io");
+                    //vm.wallet = await new Wallet("https://www.sollet.io");
                     break;
                 case "phantom":
                     // this is safe because we block phantom from being selected until it loads

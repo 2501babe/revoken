@@ -18,7 +18,7 @@ export default {
     },
     computed: {
         address() {
-            return this.pubkey.toString();
+            return this.pubkey ? this.pubkey.toString() : "";
         },
     },
     methods: {
