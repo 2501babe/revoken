@@ -111,7 +111,19 @@
                     <strong>&check;</strong>
                 </span>
             </td>
-            <td>(unknown token)</td>
+            <td>
+                <div class="token-info">
+                    <img v-if="token.meta?.logoURI" :src="token.meta.logoURI" />
+                    <div>
+                        <a v-if="token.meta?.extensions?.website" :href="token.meta.extensions.website">
+                            {{ token.meta.name }}
+                        </a>
+                        <span v-if="token.meta?.symbol">
+                            {{ token.meta.symbol }}
+                        </span>
+                    </div>
+                </div>
+            </td>
             <td><Address :pubkey="token.address"/></td>
             <td><Address :pubkey="token.mint"/></td>
             <td>
@@ -120,7 +132,12 @@
                 </span>
                 <span v-else>--</span>
             </td>
-            <td>{{ token.delegatedAmount }}</td>
+            <td>
+                {{ token.meta.formattedDelegatedAmount }}
+                <span class="usd-total" v-if="token?.meta?.usdFormattedTotal">
+                    {{ token.meta.usdFormattedTotal }}
+                </span>
+            </td>
         </tr>
     </table>
 </div>
@@ -138,10 +155,21 @@ import Dots from "./Dots.vue";
 import Address from "./Address.vue";
 
 const NETWORKS = {
-    "mainnet-beta": "https://solana-api.projectserum.com",
-    testnet: "https://api.testnet.solana.com",
-    devnet: "https://api.devnet.solana.com",
-    localhost: "http://127.0.0.1:8899",
+    "mainnet-beta": {
+        url: "https://solana-api.projectserum.com",
+        tokenlistChainId: 101
+    },
+    testnet: {
+        url: "https://api.testnet.solana.com",
+        tokenlistChainId: 102
+    },
+    devnet: {
+        url: "https://api.devnet.solana.com",
+        tokenlistChainId: 103
+    },
+    localhost: {
+        url: "http://127.0.0.1:8899"
+    },
 };
 
 export default {
@@ -203,7 +231,7 @@ export default {
             await vm.wallet.connect();
         },
         connectChain() {
-            this.connection = new w3.Connection(NETWORKS[this.selectedNetwork]);
+            this.connection = new w3.Connection(NETWORKS[this.selectedNetwork].url);
         },
         parseTokenAccount(address, account) {
             let accountInfo = AccountLayout.decode(account.data);
@@ -254,15 +282,49 @@ export default {
         async fetchTokens() {
             let vm = this;
 
+            const [{ tokens }, tokenAccounts] = await Promise.all([
+                fetch("https://raw.githack.com/solana-labs/token-list/main/src/tokens/solana.tokenlist.json")
+                    .then(x => x.json()),
+
+                vm.connection.getTokenAccountsByOwner(
+                    vm.wallet.publicKey,
+                    { programId: TOKEN_PROGRAM_ID }
+                )
+            ]);
+
             // get all tokens for this wallet, parse them, and filter those without delegates
             // i short circuit in the parser when this is the case
-            this.tokens = await vm.connection.getTokenAccountsByOwner(
-                vm.wallet.publicKey,
-                { programId: TOKEN_PROGRAM_ID }
-            ).then(res => res.value.map(v => vm.parseTokenAccount(v.pubkey, v.account)).filter(t => t))
-            .catch(() => undefined);
+            this.tokens = tokenAccounts.value.map(v => vm.parseTokenAccount(v.pubkey, v.account))
+                            .filter(Boolean)
+                            .map(token => ({
+                                ...token,
+                                meta: tokens.find(t =>
+                                    t.chainId === NETWORKS[this.selectedNetwork].tokenlistChainId &&
+                                    t.address === token.mint.toString()
+                                )
+                            }));
 
-            // TODO fetch mints here for decimal? unless they can be got from token registry
+            const coingeckoIds = this.tokens.map(t => t.meta?.extensions?.coingeckoId).filter(Boolean);
+
+            if (coingeckoIds.length > 0) {
+                const url = `https://api.coingecko.com/api/v3/simple/price?ids=${coingeckoIds.join(",")}&vs_currencies=usd`
+                const res = await fetch(url);
+                const json = await res.json();
+                Object.entries(json).forEach(([id, { usd }]) => {
+                    const token = this.tokens.find(t => t.meta?.extensions?.coingeckoId === id);
+                    token.meta.usd = usd;
+                    if (token.meta.decimals) {
+                        token.meta.formattedDelegatedAmount = token.delegatedAmount  / (10 ** token.meta.decimals);
+                        token.meta.usdFormattedTotal = new Intl.NumberFormat(
+                                'en-US',
+                                { style: 'currency', currency: 'USD'}
+                            ).format(token.meta.formattedDelegatedAmount * token.meta.usd)
+                    } else {
+                        token.meta.formattedDelegatedAmount = `${token.delegatedAmount} (unknown decimals)`
+                    }
+                })
+            }
+
         },
         async revoke(token) {
             let txn = new w3.Transaction();
@@ -320,6 +382,32 @@ img {
     font: 14px/1.2 sans-serif;
 }
 
+.token-info {
+    display: flex;
+    line-height: 1.5;
+}
+
+.token-info img {
+    width: 45px;
+    height: 45px;
+    border-radius: 45px;
+    margin: 0 5px;
+}
+
+.token-info > div {
+    flex: 1;
+}
+
+.token-info a {
+    display: block;
+}
+
+span.usd-total {
+    display: block;
+    text-decoration: italic;
+    color: #888;
+}
+
 button, select {
     cursor: pointer;
 }
@@ -333,10 +421,12 @@ button:disabled, select:disabled {
     display: inline-block;
     width: 2.5em;
     height: 1.2em;
+    margin: 10px;
 }
 
 td, th {
     padding: 0 10px;
+    text-align: left;
 }
 
 code {
