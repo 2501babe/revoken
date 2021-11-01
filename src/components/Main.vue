@@ -20,7 +20,7 @@
         </span>
         <span v-else>
             <input type="radio" id="sollet-rad" value="sollet" v-model="walletChoice"/>
-            <label for="sollet-rad">sollet (this probably doesnt work)</label>
+            <label for="sollet-rad">sollet</label>
             <input type="radio" id="phantom-rad" value="phantom" v-model="walletChoice"/>
             <label for="phantom-rad">phantom</label>
         </span>
@@ -133,6 +133,7 @@ import * as w3 from "@solana/web3.js";
 import { TOKEN_PROGRAM_ID, Token, AccountLayout, u64 } from "@solana/spl-token";
 import { PhantomWalletAdapter } from "@solana/wallet-adapter-phantom";
 import { SolletWalletAdapter } from "@solana/wallet-adapter-sollet";
+import { shallowRef } from 'vue';
 import Dots from "./Dots.vue";
 import Address from "./Address.vue";
 
@@ -156,7 +157,7 @@ export default {
     data() {
         return {
             connection: null,
-            wallet: null,
+            wallet: shallowRef(null),
             walletConnected: false,
             walletChoice: "phantom",
             solBalance: null,
