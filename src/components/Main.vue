@@ -19,8 +19,6 @@
             <Address :pubkey="wallet.publicKey"/>| {{ solBalance == null ? "--" : solBalance }} sol
         </span>
         <span v-else>
-            <input type="radio" id="sollet-rad" value="sollet" v-model="walletChoice"/>
-            <label for="sollet-rad">sollet</label>
             <input type="radio" id="phantom-rad" value="phantom" v-model="walletChoice"/>
             <label for="phantom-rad">phantom</label>
         </span>
